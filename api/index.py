@@ -1,5 +1,5 @@
+import asyncio
 import os
-import math
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -79,7 +79,9 @@ def _format_activity(a: dict) -> dict:
     dist = a.get("distance", 0)
     moving = a.get("moving_time", 0)
     elapsed = a.get("elapsed_time", 0)
-    pace_s = (moving / (dist / 1000)) if dist > 0 and moving > 0 else None
+    # Fall back to elapsed when moving_time is implausibly low (bad GPS / paused recording)
+    time_for_pace = moving if elapsed == 0 or moving >= elapsed * 0.5 else elapsed
+    pace_s = (time_for_pace / (dist / 1000)) if dist > 0 and time_for_pace > 0 else None
 
     return {
         "id": a["id"],
@@ -186,22 +188,33 @@ async def get_stats(_: None = Security(verify_key)):
     Athlete profile plus run totals: all-time, year-to-date, and last 4 weeks.
     Use this as the starting point for any coaching conversation to understand current fitness level and history.
     """
+    four_weeks_ago = int(datetime.now(timezone.utc).timestamp()) - 28 * 86400
+
     athlete = await strava_get("/athlete")
-    stats = await strava_get(f"/athletes/{athlete['id']}/stats")
+    stats, recent_raw = await asyncio.gather(
+        strava_get(f"/athletes/{athlete['id']}/stats"),
+        strava_get("/athlete/activities", {"after": four_weeks_ago, "per_page": 200}),
+    )
 
     def run_totals(key: str) -> dict:
         t = stats.get(key, {})
         dist = t.get("distance", 0)
         time_s = t.get("moving_time", 0)
         count = t.get("count", 0)
-        avg_dist = round(dist / 1000 / count, 1) if count else None
         return {
             "count": count,
             "distance_km": round(dist / 1000, 1),
             "time_hours": round(time_s / 3600, 1),
             "elevation_m": t.get("elevation_gain"),
-            "avg_distance_km": avg_dist,
+            "avg_distance_km": round(dist / 1000 / count, 1) if count else None,
         }
+
+    recent_runs = [
+        a for a in recent_raw
+        if a.get("sport_type") == "Run" or a.get("type") == "Run"
+    ]
+    recent_dist = sum(a.get("distance", 0) for a in recent_runs)
+    recent_time = sum(a.get("moving_time", 0) for a in recent_runs)
 
     return {
         "athlete": {
@@ -213,7 +226,12 @@ async def get_stats(_: None = Security(verify_key)):
         },
         "all_time_runs": run_totals("all_run_totals"),
         "ytd_runs": run_totals("ytd_run_totals"),
-        "last_4_weeks_runs": run_totals("recent_run_totals"),
+        "last_4_weeks_runs": {
+            "count": len(recent_runs),
+            "distance_km": round(recent_dist / 1000, 1),
+            "time_hours": round(recent_time / 3600, 1),
+            "avg_distance_km": round(recent_dist / 1000 / len(recent_runs), 1) if recent_runs else None,
+        },
         "biggest_climb_m": stats.get("biggest_climb_elevation_gain"),
     }
 
