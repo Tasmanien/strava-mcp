@@ -226,7 +226,7 @@ async def get_stats(_: None = Security(verify_key)):
 @app.get("/auth", include_in_schema=False)
 async def auth_start():
     """Redirect to Strava to authorize with full activity read scope."""
-    base = os.environ.get("VERCEL_URL") or os.environ.get("BASE_URL") or "localhost:8000"
+    base = os.environ.get("BASE_URL") or os.environ.get("VERCEL_URL") or "localhost:8000"
     scheme = "http" if "localhost" in base else "https"
     redirect_uri = f"{scheme}://{base}/auth/callback"
     url = (
