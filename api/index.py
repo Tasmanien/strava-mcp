@@ -15,6 +15,7 @@ app = FastAPI(
         "Use this to analyze training history, plan workouts, estimate race paces, and track progress."
     ),
     version="1.0.0",
+    servers=[{"url": "https://strava-mcp-psi.vercel.app"}],
 )
 
 app.add_middleware(
