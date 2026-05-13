@@ -223,6 +223,13 @@ async def get_stats(_: None = Security(verify_key)):
 # OAuth helpers (run once after deploy to get activity:read_all scope)
 # ---------------------------------------------------------------------------
 
+@app.get("/debug/stats-raw", include_in_schema=False)
+async def debug_stats_raw(_: None = Security(verify_key)):
+    athlete = await strava_get("/athlete")
+    stats = await strava_get(f"/athletes/{athlete['id']}/stats")
+    return stats
+
+
 @app.get("/auth", include_in_schema=False)
 async def auth_start():
     """Redirect to Strava to authorize with full activity read scope."""
